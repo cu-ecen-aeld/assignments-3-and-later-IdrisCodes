@@ -1,9 +1,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+
 
 #include "systemcalls.h"
 
@@ -103,7 +105,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
+    // thiswaitpid line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
 
