@@ -13,3 +13,4 @@ set(TESTED_SOURCE
     ../examples/autotest-validate/autotest-validate.c
 )
 add_subdirectory(assignment-autotest)
+add_subdirectory(finder-app)
