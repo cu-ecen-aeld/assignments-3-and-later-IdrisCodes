@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
     if (argc < 3)
     {
         syslog(LOG_ERR, "Not enough arguments");
-        exit(1);
+        return 1;
     }
 
     char *path = argv[1];
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
     if (fd == -1)
     {
         syslog(LOG_ERR, "File could not be created/opened");
-        exit(1);
+        return 1;
     }
 
     ssize_t len = strlen(str);
@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
                 continue;
             syslog(LOG_ERR, "Could not wrrite to file");
             close(fd);
-            exit(1);
+            return 1;
             break;
         }
 
