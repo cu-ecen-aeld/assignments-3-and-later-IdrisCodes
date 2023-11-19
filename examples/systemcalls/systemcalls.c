@@ -1,3 +1,10 @@
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 #include "systemcalls.h"
 
 /**
@@ -16,8 +23,9 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return true;
+    if(system(cmd) == 0)
+        return true;
+    return false;
 }
 
 /**
@@ -58,7 +66,22 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
+    int status;
+    pid_t pid;
+    pid = fork ();
+    if (pid == -1)
+        return -1;
+    else if (pid == 0) {
+        execv (command[0], command);
+        exit (-1);
+    }
+    
+    if (waitpid (pid, &status, 0) == -1)
+        return -1;
+    else if (WIFEXITED (status))
+        return WEXITSTATUS (status);
+    
+    return -1;
     va_end(args);
 
     return true;
@@ -92,6 +115,32 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int kidpid;
+    int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    if (fd < 0)
+    {
+        perror("open");
+        abort();
+    }
+    switch (kidpid = fork())
+    {
+    case -1:
+        perror("fork");
+        abort();
+    case 0:
+        if (dup2(fd, 1) < 0)
+        {
+            perror("dup2");
+            abort();
+        }
+        close(fd);
+        execvp(command[0], command);
+        perror("execvp");
+        abort();
+    default:
+        close(fd);
+        /* do whatever the parent wants to do. */
+    }
 
     va_end(args);
 
