@@ -36,10 +36,10 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     # TODO: Add your kernel build steps here
     make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE clean
     make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE mrproper
-    make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE defconfig
-    make -j4 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE all
-    make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE modules
-    make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE dtbs
+    make -j8 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE defconfig
+    make -j8 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE all
+    make -j8 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE modules
+    make -j8 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE dtbs
 fi
 
 echo "Adding the Image in outdir"
@@ -72,8 +72,8 @@ else
 fi
 
 # TODO: Make and install busybox
-make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
-make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE install
+make -j8 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
+make -j8 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE install
 
 
 echo "Library dependencies"
@@ -84,13 +84,13 @@ ${CROSS_COMPILE}readelf -a busybox | grep "Shared library"
 SYSROOT=$(aarch64-none-linux-gnu-gcc -print-sysroot)
 
 cp -a ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
-cp -a ${SYSROOT}/lib64/ld-2.33.so ${OUTDIR}/rootfs/lib64
+cp -a ${SYSROOT}/lib64/ld-2.31.so ${OUTDIR}/rootfs/lib64
 cp -a ${SYSROOT}/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64    
-cp -a ${SYSROOT}/lib64/libm-2.33.so ${OUTDIR}/rootfs/lib64 
+cp -a ${SYSROOT}/lib64/libm-2.31.so ${OUTDIR}/rootfs/lib64 
 cp -a ${SYSROOT}/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64 
-cp -a ${SYSROOT}/lib64/libc-2.33.so ${OUTDIR}/rootfs/lib64 
+cp -a ${SYSROOT}/lib64/libc-2.31.so ${OUTDIR}/rootfs/lib64 
 cp -a ${SYSROOT}/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64 
-cp -a ${SYSROOT}/lib64/libresolv-2.33.so ${OUTDIR}/rootfs/lib64 
+cp -a ${SYSROOT}/lib64/libresolv-2.31.so ${OUTDIR}/rootfs/lib64 
 
 
 # TODO: Make device nodes
