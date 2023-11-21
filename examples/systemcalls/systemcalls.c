@@ -77,12 +77,14 @@ bool do_exec(int count, ...)
     if (pid == -1)
         return -1;
     else if (pid == 0) {
+        /*
         if(command[0][0] != '/')
         {
             exit(-1);
         }
-        execv (command[0], command);
-        return false;
+        */
+        if(execv (command[0], command))
+            return false;
     }
     
     if (waitpid (pid, &status, 0) == -1)
@@ -140,16 +142,20 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         if (dup2(fd, 1) < 0)
         {
             perror("dup2");
-            exit(-1);
+            return false;
         }
         close(fd);
+        /*
         if(command[0][0] != '/')
         {
             exit(-1);
         }
-        execv(command[0], command);
-        perror("execv");
-        exit(-1);
+        */
+        if(execv(command[0], command))
+        {
+            perror("execv");
+            return false;
+        }
     default:
         close(fd);
         if (waitpid (kidpid, &status, 0) == -1)
