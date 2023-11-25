@@ -14,18 +14,13 @@ fi
 filesdir="$1"
 searchstr="$2"
 
-result=$(grep -c $searchstr $filesdir/*.*)
+#result=$(grep -c $searchstr $filesdir/*.*)
 
 total=0
 files=0
-for i in $result
-do
-num=$(grep -oE [0-9]+$ <<< $i)
-total=$((total + num))
-if [ $num -gt "0" ]; then
-files=$((files + 1))
-fi
 
-done
+
+files=$(find $filesdir -type f | wc -l)
+total=$(grep $searchstr $(find $filesdir -type f)| wc -l)
 
 echo "The number of files are $files and the number of matching lines are $total"
