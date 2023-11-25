@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 #Perform checks
 if [ "$#" -ne 2 ]; then
