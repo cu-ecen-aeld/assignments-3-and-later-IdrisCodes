@@ -1,6 +1,7 @@
 
 CC:=$(CROSS_COMPILE)gcc
 
+all: writer
 default: writer
 
 writer: writer.o
