@@ -42,11 +42,12 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
     make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
     make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi
 
 echo "Adding the Image in outdir"
+cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -59,7 +60,7 @@ fi
 # TODO: Create necessary base directories
 mkdir -p "${OUTDIR}/rootfs"
 cd "${OUTDIR}/rootfs"
-mkdir bin dev etc home lib proc sbin sys tmp usr var
+mkdir bin dev etc home lib lib64 proc sbin sys tmp usr var
 mkdir usr/bin usr/lib usr/sbin
 mkdir -p var/log
 
@@ -92,10 +93,10 @@ export SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 
 # TODO: Add library dependencies to rootfs
 
-sudo cp -aL "${SYSROOT}/lib/ld-linux-aarch64.so.1" "${OUTDIR}/rootfs/lib"
-sudo cp -aL "${SYSROOT}/lib64/libm.so.6" "${OUTDIR}/rootfs/lib64"
-sudo cp -aL "${SYSROOT}/lib64/libresolv.so.2" "${OUTDIR}/rootfs/lib64"
-sudo cp -aL "${SYSROOT}/lib64/libc.so.6" "${OUTDIR}/rootfs/lib64"
+sudo cp -aL "${SYSROOT}/lib/ld-linux-aarch64.so.1" "${OUTDIR}/rootfs/lib/ld-linux-aarch64.so.1"
+sudo cp -aL "${SYSROOT}/lib64/libm.so.6" "${OUTDIR}/rootfs/lib64/libm.so.6"
+sudo cp -aL "${SYSROOT}/lib64/libresolv.so.2" "${OUTDIR}/rootfs/lib64/libresolv.so.2"
+sudo cp -aL "${SYSROOT}/lib64/libc.so.6" "${OUTDIR}/rootfs/lib64/libc.so.6"
 
 # TODO: Make device nodes
 sudo mknod -m 666 ${OUTDIR}/rootfs/dev/null c 1 3
@@ -104,7 +105,7 @@ sudo mknod -m 600 ${OUTDIR}/rootfs/dev/console c 5 1
 # TODO: Clean and build the writer utility
 cd ${FINDER_APP_DIR}
 make clean
-CROSS_COMPILE=${CROSS_COMPILE} make
+make CROSS_COMPILE=${CROSS_COMPILE} 
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
@@ -112,7 +113,7 @@ CROSS_COMPILE=${CROSS_COMPILE} make
 cp writer "${OUTDIR}/rootfs/home"
 cp finder.sh "${OUTDIR}/rootfs/home"
 cp finder-test.sh "${OUTDIR}/rootfs/home"
-cp -Lr ./conf "${OUTDIR}/rootfs/home"
+cp -r '../conf' "${OUTDIR}/rootfs/home"
 cp autorun-qemu.sh "${OUTDIR}/rootfs/home"
 
 
