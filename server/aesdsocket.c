@@ -8,49 +8,75 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netinet/ip.h> 
+#include <netinet/ip.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
+#include <time.h>
+#include <pthread.h>
+#include <sys/queue.h>
+
+#include "connection_thread.h"
 
 #define SERVER_PORT "9000"
 #define FILENAME "/var/tmp/aesdsocketdata"
 
+/* Structs, typedefs */
+
+struct entry
+{
+    pthread_t thread;
+    LIST_ENTRY(entry)
+    entries; /* List */
+};
+
+LIST_HEAD(listhead, entry);
+struct listhead head;
 
 /* Global variables */
-static FILE* output_file;
-static char* internal_buffer;
-struct sigaction sig_action;
+static FILE *output_file;
+static struct sigaction sig_action;
+static pthread_mutex_t filemutex = PTHREAD_MUTEX_INITIALIZER;
+static int sockfd, newsockfd;
 
-int sockfd, newsockfd;
+
 
 /* Function prototypes */
-static void my_handler (int signo, siginfo_t *si, void *ucontext);
-static int appendData(char* data, size_t size, FILE* file);
+
 static void initSignalHandler(void);
-static int socketHandler(int socket, FILE* file);
 static int startServer(bool runasdaemon);
 static void *get_in_addr(struct sockaddr *sa);
-static void sendFile(int socket, FILE* file);
+static void *timestampThread(void *arg);
+static void removeThreadFromList(pthread_t id);
 /**
  *  Main function
-*/
-int main(int argc, char** argv)
+ */
+int main(int argc, char **argv)
 {
-    int retval = 0;
     bool daemon = false;
-    for(int i=1; i < argc; ++i)
+    for (int i = 1; i < argc; ++i)
     {
-        if(strstr(argv[i],"-d"))
+        if (strstr(argv[i], "-d"))
         {
             daemon = true;
         }
     }
+
+    /* Open syslog */
     openlog("aesdsockets", LOG_CONS | LOG_PID, LOG_USER);
-    
+
+    /* Initialize robust mutex */
+    pthread_mutexattr_t mutex_att;
+    pthread_mutexattr_init(&mutex_att);
+    pthread_mutexattr_settype(&mutex_att, PTHREAD_MUTEX_ERRORCHECK);
+    pthread_mutexattr_setrobust(&mutex_att, PTHREAD_MUTEX_ROBUST);
+
+    pthread_mutex_init(&filemutex, &mutex_att);
+
+    pthread_mutexattr_destroy(&mutex_att);
     /* Open output file */
     output_file = fopen(FILENAME, "a+");
-    if(output_file == NULL)
+    if (output_file == NULL)
     {
         syslog(LOG_ERR, "Could not open/create file, exiting");
         return -1;
@@ -59,15 +85,15 @@ int main(int argc, char** argv)
     /* Install signal handler */
     initSignalHandler();
 
-
     /* Open socket */
     sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(sockfd == -1)
+    if (sockfd == -1)
     {
         syslog(LOG_ERR, "Could not create socket");
         return -1;
     }
 
+    /* Launch server*/
     startServer(daemon);
 
     return 0;
@@ -75,38 +101,44 @@ int main(int argc, char** argv)
 
 int startServer(bool runasdaemon)
 {
-    struct addrinfo hints, *servinfo, *p;
-    int yes=1;
-    char s[INET6_ADDRSTRLEN];
-    int rv;
+    struct addrinfo hints, *servinfo, *pAddrInfo;
+    int yes = 1;
+    char str[INET_ADDRSTRLEN];
+    int result;
     socklen_t sin_size;
     struct sockaddr_storage their_addr;
+    int n = 0;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // use my IP
 
-    if ((rv = getaddrinfo(NULL, SERVER_PORT, &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        exit (-11);
+    if ((result = getaddrinfo(NULL, SERVER_PORT, &hints, &servinfo)) != 0)
+    {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
+        exit(-11);
     }
 
     // loop through all the results and bind to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
+    for (pAddrInfo = servinfo; pAddrInfo != NULL; pAddrInfo = pAddrInfo->ai_next)
+    {
+        if ((sockfd = socket(pAddrInfo->ai_family, pAddrInfo->ai_socktype,
+                             pAddrInfo->ai_protocol)) == -1)
+        {
             perror("server: socket");
             continue;
         }
 
         if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
-                sizeof(int)) == -1) {
+                       sizeof(int)) == -1)
+        {
             perror("setsockopt");
             exit(-1);
         }
 
-        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+        if (bind(sockfd, pAddrInfo->ai_addr, pAddrInfo->ai_addrlen) == -1)
+        {
             close(sockfd);
             perror("server: bind");
             continue;
@@ -117,211 +149,174 @@ int startServer(bool runasdaemon)
 
     freeaddrinfo(servinfo); // all done with this structure
 
-    if (p == NULL)  {
+    if (pAddrInfo == NULL)
+    {
         fprintf(stderr, "server: failed to bind\n");
         exit(-1);
     }
 
-
-    if(runasdaemon)
+    if (runasdaemon)
     {
-        if(daemon(0, 1) == -1)
+        if (daemon(0, 1) == -1)
         {
             printf("Couldnt daemonize");
             exit(-1);
         }
     }
 
-
-
-    if (listen(sockfd, 1) == -1) {
+    if (listen(sockfd, 1) == -1)
+    {
         perror("listen");
         exit(-1);
     }
 
-    while(1) {  // main accept() loop
+    /* Initialize thread list */
+    LIST_INIT(&head);
+
+    /* Create timestamp thread */
+    struct entry *element = malloc(sizeof(struct entry));
+    LIST_INSERT_HEAD(&head, element, entries);
+    pthread_create(&element->thread, NULL, timestampThread, NULL);
+    while (1)
+    {
         sin_size = sizeof their_addr;
         newsockfd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-        if (newsockfd == -1) {
+        if (newsockfd == -1)
+        {
             perror("accept");
             continue;
         }
 
         inet_ntop(their_addr.ss_family,
-            get_in_addr((struct sockaddr *)&their_addr),
-            s, sizeof s);
-        
-        syslog(LOG_USER, "Accepted connection from %s", s);
+                  get_in_addr((struct sockaddr *)&their_addr),
+                  str, sizeof str);
+        syslog(LOG_USER, "Accepted connection from %s", str);
 
-        socketHandler(newsockfd, output_file);
-        
-        syslog(LOG_USER, "Closed connection from %s", s);
+        /* Create new thread and add it to the list of threads */
+        element = malloc(sizeof(struct entry));
+        LIST_INSERT_HEAD(&head, element, entries);
+
+        /* Allocate and fill param structure, thread will be responsible of freeing
+        this memory location */
+        ThreadParams_t *params = malloc(sizeof(ThreadParams_t));
+        params->thread_id = n++;
+        params->socket_fd = newsockfd;
+        params->file = output_file;
+        params->filemutex = &filemutex;
+        params->remove_me_from_list = removeThreadFromList;
+        strncpy(params->address, str, 4 * 3 + 3 + 1);
+
+        pthread_create(&element->thread,
+                       NULL,
+                       connection_thread,
+                       params);
     }
-
 }
-
-int socketHandler(int socket, FILE* file)
-{
-//    struct sockaddr client_address;
-//    socklen_t len; 
-//    char ipaddr[16];
-//    /* Print peer address to log */
-//    if(getpeername(socket, &client_address, &len))
-//    {
-//        syslog(LOG_ERR, "Could not obtain peer address");
-//        exit(-1);
-//    }
-//
-//    inet_ntop(AF_INET, &client_address, ipaddr , sizeof ipaddr);
-//    syslog(LOG_DEBUG, "Accepted connection from %s",ipaddr );
-
-    ssize_t received;
-    uint8_t buff[1501];
-    do
-    {
-        received = read(newsockfd, buff, 1500);
-        appendData(buff, received, output_file);
-        //send(newsockfd, buff, received,0);
-    }while (received>0);
-
-    return 0;
-}
-
 
 /**
  *  Signal handler
-*/
-void signalHandler (int signo)
+ */
+void signalHandler(int signo)
 {
     syslog(LOG_USER, "Caught signal, exiting");
+
+    /* Join threads */
+    struct entry *n1, *n2, *np;
+    LIST_FOREACH(np, &head, entries)
+    {
+        pthread_cancel(np->thread);
+        pthread_join(np->thread, NULL);
+    }
+
+    /* Free list */
+    n1 = LIST_FIRST(&head);
+    while (n1 != NULL) {
+        n2 = LIST_NEXT(n1, entries);
+        free(n1);
+        n1 = n2;
+    }
+    LIST_INIT(&head);
+
+    
 
     closelog();
 
     close(sockfd);
-    close(newsockfd);
-
+    fflush(output_file);
     fclose(output_file);
     remove(FILENAME);
-
-    free(internal_buffer);
 
     exit(0);
 }
 
 /**
- *  Appends data to buffer
- *  Writes buffer when a line is complete
-*/
-int appendData(char* data, size_t size, FILE* file)
-{
-    static size_t currentSize = 0;
-    
-    if(internal_buffer == NULL) /* New line */
-    {
-        internal_buffer = malloc(size * sizeof(char));
-        if(internal_buffer == NULL)
-        {
-            syslog(LOG_CRIT, "Cannot allocate memory for new write");
-            return -1;
-        }
-        currentSize = size;
-        memcpy(internal_buffer, data, size);
-    }
-    else    /* Continue with line */
-    {
-        char* new_buffer = realloc(internal_buffer, currentSize + size);
-        if(new_buffer == NULL)
-        {
-            syslog(LOG_CRIT, "Cannot allocate memory for new write, flushing buffer");
-            
-            if(fwrite(internal_buffer, sizeof(char), currentSize, file) <= 0)
-            {
-                syslog(LOG_CRIT, "Cannot write to file");
-                return -1;
-            }
-            fflush(file);
-            free(internal_buffer);
-            currentSize = 0;
-            return appendData(data, size, file);
-        }
-        else
-        {
-            memcpy(new_buffer + currentSize, data, size);
-            internal_buffer = new_buffer;
-            currentSize += size;
-            
-        }
-    }
-
-    /* Look for end of line character */
-    size_t i = 0ULL;
-    
-    for(i=0ULL; i < currentSize; ++i)
-    {
-        if(internal_buffer[i] == '\n')
-        {
-            fwrite(internal_buffer, sizeof(char), i+1, file);
-            fflush(file);
-            printf("Sending back file");
-            sendFile(newsockfd, file);
-            if((i+1) < currentSize)
-                memmove(internal_buffer, internal_buffer + i + 1, currentSize - i);
-            currentSize -= (i+1);
-        }
-    }
-
-    if(currentSize == 0)
-    {
-        free(internal_buffer);
-        internal_buffer = NULL;
-    }
-    else
-    {
-        /* Shrink the buffer */
-        internal_buffer = realloc(internal_buffer, currentSize);
-    }
-
-    return 0;
-}
-
-
-void sendFile(int socket, FILE* file)
-{
-    char buff[1024];
-    size_t count;
-    rewind(file);
-    do
-    {
-        count = fread(buff, sizeof(char), sizeof(buff)/sizeof(char), file);
-        
-        if(count)
-        {
-            send(socket, buff, count, 0);
-            printf("sending %lu bytes\n", count);
-        }
-    } while (count);
-}
-/**
  *  Initializes signal handling
-*/
+ */
 void initSignalHandler(void)
 {
     sig_action.sa_handler = signalHandler;
 
     /* Block all signals */
-    memset (&sig_action.sa_mask, 1, sizeof(sig_action.sa_mask));
+    memset(&sig_action.sa_mask, 1, sizeof(sig_action.sa_mask));
 
     sigaction(SIGINT, &sig_action, NULL);
     sigaction(SIGTERM, &sig_action, NULL);
-
 }
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
-    if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
+    if (sa->sa_family == AF_INET)
+    {
+        return &(((struct sockaddr_in *)sa)->sin_addr);
     }
 
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+    return &(((struct sockaddr_in6 *)sa)->sin6_addr);
+}
+
+/**
+ * Timestamp thread
+ */
+void *timestampThread(void *arg)
+{
+    char outstr[200];
+    time_t t;
+    struct tm *tmp;
+    size_t size;
+
+    while (1)
+    {
+        sleep(10);
+
+        t = time(NULL);
+        tmp = localtime(&t);
+
+        size = strftime(outstr, sizeof(outstr), "timestamp:%a, %d %b %Y %T %z\n", tmp);
+
+        pthread_mutex_lock(&filemutex);
+        fwrite(outstr, sizeof(char), size, output_file);
+        fflush(output_file);
+        pthread_mutex_unlock(&filemutex);
+    }
+
+    return NULL;
+}
+
+void removeThreadFromList(pthread_t id)
+{
+    struct entry* np = NULL;
+    LIST_FOREACH(np, &head, entries)
+    {
+        if(pthread_equal(id, np->thread))
+        {
+            break;
+        }
+    }
+
+    if(np != NULL)
+    {
+        LIST_REMOVE(np, entries);
+        free(np);
+    }
+
 }
