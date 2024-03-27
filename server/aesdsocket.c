@@ -18,9 +18,19 @@
 
 #include "connection_thread.h"
 
-#define SERVER_PORT "9000"
-#define FILENAME "/var/tmp/aesdsocketdata"
+#define USE_AESD_CHAR_DEVICE    1
 
+
+
+
+
+#define SERVER_PORT "9000"
+
+#if (USE_AESD_CHAR_DEVICE == 1)
+#define FILENAME "/dev/aesdchar"
+#else   
+#define FILENAME "/var/tmp/aesdsocketdata"
+#endif
 /* Structs, typedefs */
 
 struct entry
@@ -244,8 +254,9 @@ void signalHandler(int signo)
     close(sockfd);
     fflush(output_file);
     fclose(output_file);
+#if (USE_AESD_CHAR_DEVICE == 0)
     remove(FILENAME);
-
+#endif
     exit(0);
 }
 
@@ -283,6 +294,10 @@ void *timestampThread(void *arg)
     time_t t;
     struct tm *tmp;
     size_t size;
+
+#if USE_AESD_CHAR_DEVICE
+    pthread_exit(NULL);
+#endif
 
     while (1)
     {
