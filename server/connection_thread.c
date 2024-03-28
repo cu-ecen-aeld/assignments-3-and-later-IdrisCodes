@@ -1,4 +1,4 @@
-
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -11,10 +11,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include "connection_thread.h"
+#include "aesd_ioctl.h"
 
+#define RPI3        0
+
+
+#if RPI3
+/* Dont use syslog on Raspbian */
+#define syslog(priority, ...)    printf(__VA_ARGS__)
+#endif
 
 static void sendFile(int socket, FILE *file);
 
+struct uint_pair
+{
+    uint32_t first;
+    uint32_t second;
+};
 
 static void cleanup_handler(void *arg)
 {
@@ -44,7 +57,7 @@ void *connection_thread(void *arg)
             params->buff = internal_buffer;
             if (internal_buffer == NULL)
             {
-                syslog(LOG_CRIT, "Cannot allocate memory for new write");
+                syslog(LOG_CRIT, "Cannot allocate memory for new write\n");
                 pthread_exit(NULL);
             }
             currentSize = received;
@@ -55,7 +68,7 @@ void *connection_thread(void *arg)
             char *new_buffer = realloc(internal_buffer, currentSize + received);
             if (new_buffer == NULL)
             {
-                syslog(LOG_CRIT, "Cannot allocate memory for new write");
+                syslog(LOG_CRIT, "Cannot allocate memory for new write\n");
                 pthread_exit(NULL);
             }
             else
@@ -67,19 +80,33 @@ void *connection_thread(void *arg)
             }
         }
 
+        
         /* Look for end of line character */
         size_t i = 0ULL;
-
+        struct aesd_seekto pair;
         for (i = 0ULL; i < currentSize; ++i)
         {
             if (internal_buffer[i] == '\n')
             {
+                /* TODO: Handle commands */
+                if(strstr(internal_buffer, "AESDCHAR_IOCSEEKTO")== internal_buffer)
+                {
+                    
+                    pthread_mutex_lock(params->filemutex);
+                    sscanf(internal_buffer,"AESDCHAR_IOCSEEKTO:%u,%u", &pair.write_cmd, &pair.write_cmd_offset);
+                    printf("Found command %u, %u\n",pair.write_cmd, pair.write_cmd_offset);
+                    ioctl(fileno(params->file), AESDCHAR_IOCSEEKTO, &pair);
+                    pthread_mutex_unlock(params->filemutex);
+                    goto skip_save;
+
+                }
                 pthread_mutex_lock(params->filemutex);
                 fwrite(internal_buffer, sizeof(char), i + 1, params->file);
-                pthread_mutex_unlock(params->filemutex);
                 fflush(params->file);
+                pthread_mutex_unlock(params->filemutex);
                 sendFile(params->socket_fd, params->file);
                 
+                skip_save:                
                 if ((i + 1) < currentSize)
                     memmove(internal_buffer, internal_buffer + i + 1, currentSize - i);
                 currentSize -= (i + 1);
@@ -100,7 +127,7 @@ void *connection_thread(void *arg)
         }
 
     } while (received > 0);
-    syslog(LOG_USER, "Closed connection from %s", params->address);
+    syslog(LOG_USER, "Closed connection from %s\n", params->address);
 
     pthread_cleanup_pop(0);
 

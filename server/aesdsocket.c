@@ -19,7 +19,13 @@
 #include "connection_thread.h"
 
 #define USE_AESD_CHAR_DEVICE    1
+#define RPI3        0
 
+
+#if RPI3
+/* Dont use syslog on Raspbian */
+#define syslog(priority, ...)    printf(__VA_ARGS__)
+#endif
 
 
 
@@ -88,7 +94,7 @@ int main(int argc, char **argv)
     output_file = fopen(FILENAME, "a+");
     if (output_file == NULL)
     {
-        syslog(LOG_ERR, "Could not open/create file, exiting");
+        syslog(LOG_ERR, "Could not open/create file, exiting\n");
         return -1;
     }
 
@@ -99,7 +105,7 @@ int main(int argc, char **argv)
     sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sockfd == -1)
     {
-        syslog(LOG_ERR, "Could not create socket");
+        syslog(LOG_ERR, "Could not create socket\n");
         return -1;
     }
 
@@ -136,21 +142,21 @@ int startServer(bool runasdaemon)
         if ((sockfd = socket(pAddrInfo->ai_family, pAddrInfo->ai_socktype,
                              pAddrInfo->ai_protocol)) == -1)
         {
-            perror("server: socket");
+            perror("server: socket\n");
             continue;
         }
 
         if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
                        sizeof(int)) == -1)
         {
-            perror("setsockopt");
+            perror("setsockopt\n");
             exit(-1);
         }
 
         if (bind(sockfd, pAddrInfo->ai_addr, pAddrInfo->ai_addrlen) == -1)
         {
             close(sockfd);
-            perror("server: bind");
+            perror("server: bind\n");
             continue;
         }
 
@@ -169,14 +175,14 @@ int startServer(bool runasdaemon)
     {
         if (daemon(0, 1) == -1)
         {
-            printf("Couldnt daemonize");
+            printf("Couldnt daemonize\n");
             exit(-1);
         }
     }
 
     if (listen(sockfd, 1) == -1)
     {
-        perror("listen");
+        perror("listen\n");
         exit(-1);
     }
 
@@ -200,7 +206,7 @@ int startServer(bool runasdaemon)
         inet_ntop(their_addr.ss_family,
                   get_in_addr((struct sockaddr *)&their_addr),
                   str, sizeof str);
-        syslog(LOG_USER, "Accepted connection from %s", str);
+        syslog(LOG_USER, "Accepted connection from %s\n", str);
 
         /* Create new thread and add it to the list of threads */
         element = malloc(sizeof(struct entry));
@@ -228,7 +234,7 @@ int startServer(bool runasdaemon)
  */
 void signalHandler(int signo)
 {
-    syslog(LOG_USER, "Caught signal, exiting");
+    syslog(LOG_USER, "Caught signal, exiting\n");
 
     /* Join threads */
     struct entry *n1, *n2, *np;
