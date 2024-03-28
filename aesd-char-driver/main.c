@@ -51,6 +51,10 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = 0;
+    struct aesd_dev *dev;
+    struct aesd_buffer_entry * p_entry;
+    size_t entry_offset = 0ULL;
+
     PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
     /**
      * TODO: handle read
@@ -65,7 +69,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         return -EINVAL;
     }
 
-    struct aesd_dev *dev = filp->private_data; 
+    dev = filp->private_data; 
     if(dev == NULL)
     {
         printk("Null dev struct\n");
@@ -76,8 +80,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 		return -ERESTARTSYS;
 
     /* Try to read */
-    struct aesd_buffer_entry * p_entry;
-    size_t entry_offset = 0ULL;
+    
     p_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circular_buffer, *f_pos, &entry_offset);
     
     if(p_entry == NULL)
@@ -110,6 +113,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
+    struct aesd_dev *dev;
+    const char * presult;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
     /**
      * TODO: handle write
@@ -125,14 +130,14 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         return -EINVAL;
     }
 
-    struct aesd_dev *dev = filp->private_data; 
+    
+    dev = filp->private_data;
 
     /* Acquire mutex */
     if (mutex_lock_interruptible(&dev->lock))
 		return -ERESTARTSYS;
 
     /* Allocate data */
-    const char * presult;
     presult = krealloc(dev->entry.buffptr, dev->entry.size + count, GFP_KERNEL);
     if(presult == NULL)
     {
