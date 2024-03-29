@@ -237,7 +237,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     
     uint8_t i;
     struct aesd_buffer_entry *entry = NULL;
-
+    printk("Ioctl called\n");
 	/*
 	 * extract the type and number bitfields, and don't decode
 	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
@@ -298,6 +298,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
         filp->f_pos = size;  
+        printk("Fpos %d\n", size);
     }
 
 leave:

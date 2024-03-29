@@ -13,7 +13,7 @@
 #include "connection_thread.h"
 #include "aesd_ioctl.h"
 
-#define RPI3        0
+#define RPI3        1
 
 
 #if RPI3
@@ -96,17 +96,19 @@ void *connection_thread(void *arg)
                     sscanf(internal_buffer,"AESDCHAR_IOCSEEKTO:%u,%u", &pair.write_cmd, &pair.write_cmd_offset);
                     printf("Found command %u, %u\n",pair.write_cmd, pair.write_cmd_offset);
                     ioctl(fileno(params->file), AESDCHAR_IOCSEEKTO, &pair);
+                    sendFile(params->socket_fd, params->file);
                     pthread_mutex_unlock(params->filemutex);
-                    goto skip_save;
+                    currentSize = 0;
+                    break;
 
                 }
                 pthread_mutex_lock(params->filemutex);
                 fwrite(internal_buffer, sizeof(char), i + 1, params->file);
+                rewind(params->file);
                 fflush(params->file);
-                pthread_mutex_unlock(params->filemutex);
                 sendFile(params->socket_fd, params->file);
-                
-                skip_save:                
+                pthread_mutex_unlock(params->filemutex);
+
                 if ((i + 1) < currentSize)
                     memmove(internal_buffer, internal_buffer + i + 1, currentSize - i);
                 currentSize -= (i + 1);
@@ -149,11 +151,15 @@ void sendFile(int socket, FILE *file)
 {
     char buff[1024];
     size_t count;
-    rewind(file);
+
+    syslog(LOG_USER, "Sending whatever is in the file\n");
+    
     do
     {
-        count = fread(buff, sizeof(char), sizeof(buff) / sizeof(char), file);
-
+        //count = fread(buff, sizeof(char), sizeof(buff) / sizeof(char), file);
+        count = read(fileno(file), buff, sizeof(buff));
+        buff[count+1]=0;
+        syslog(LOG_USER, "Sending %s\n", buff);
         if (count)
         {
             send(socket, buff, count, 0);

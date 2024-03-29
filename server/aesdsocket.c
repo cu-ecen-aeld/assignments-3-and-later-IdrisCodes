@@ -19,7 +19,7 @@
 #include "connection_thread.h"
 
 #define USE_AESD_CHAR_DEVICE    1
-#define RPI3        0
+#define RPI3        1
 
 
 #if RPI3
