@@ -298,7 +298,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
         filp->f_pos = size;  
-        printk("Fpos %d\n", size);
+        //printk("Fpos %d\n", size);
     }
 
 leave:
