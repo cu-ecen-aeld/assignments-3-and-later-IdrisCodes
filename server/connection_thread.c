@@ -103,7 +103,8 @@ void *connection_thread(void *arg)
 
                 }
                 pthread_mutex_lock(params->filemutex);
-                fwrite(internal_buffer, sizeof(char), i + 1, params->file);
+                //fwrite(internal_buffer, sizeof(char), i + 1, params->file);
+                write(fileno(params->file), internal_buffer, i + 1);
                 rewind(params->file);
                 fflush(params->file);
                 sendFile(params->socket_fd, params->file);

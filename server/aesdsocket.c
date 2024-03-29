@@ -315,7 +315,8 @@ void *timestampThread(void *arg)
         size = strftime(outstr, sizeof(outstr), "timestamp:%a, %d %b %Y %T %z\n", tmp);
 
         pthread_mutex_lock(&filemutex);
-        fwrite(outstr, sizeof(char), size, output_file);
+        //fwrite(outstr, sizeof(char), size, output_file);
+        write(fileno(output_file) ,outstr, size);
         fflush(output_file);
         pthread_mutex_unlock(&filemutex);
     }
