@@ -211,6 +211,16 @@ int startServer(bool runasdaemon)
         ThreadParams_t *params = malloc(sizeof(ThreadParams_t));
         params->thread_id = n++;
         params->socket_fd = newsockfd;
+        if(output_file == NULL)
+        {
+            /* Open output file */
+            output_file = fopen(FILENAME, "a+");
+            if (output_file == NULL)
+            {
+                syslog(LOG_ERR, "Could not open/create file, exiting\n");
+                return -1;
+            }
+        }
         params->file = output_file;
         if(output_file== NULL)
         {
