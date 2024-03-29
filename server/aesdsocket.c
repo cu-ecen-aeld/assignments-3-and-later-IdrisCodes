@@ -90,13 +90,7 @@ int main(int argc, char **argv)
     pthread_mutex_init(&filemutex, &mutex_att);
 
     pthread_mutexattr_destroy(&mutex_att);
-    /* Open output file */
-    output_file = fopen(FILENAME, "a+");
-    if (output_file == NULL)
-    {
-        syslog(LOG_ERR, "Could not open/create file, exiting\n");
-        return -1;
-    }
+    
 
     /* Install signal handler */
     initSignalHandler();
@@ -218,6 +212,16 @@ int startServer(bool runasdaemon)
         params->thread_id = n++;
         params->socket_fd = newsockfd;
         params->file = output_file;
+        if(output_file== NULL)
+        {
+            /* Open output file */
+            output_file = fopen(FILENAME, "a+");
+            if (output_file == NULL)
+            {
+                syslog(LOG_ERR, "Could not open/create file, exiting\n");
+                return -1;
+            }
+        }
         params->filemutex = &filemutex;
         params->remove_me_from_list = removeThreadFromList;
         strncpy(params->address, str, 4 * 3 + 3 + 1);
